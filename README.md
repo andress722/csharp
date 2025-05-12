@@ -14,160 +14,133 @@ FinanceiroApi/
 ├── Program.cs
 └── FinanceiroApi.csproj
 
-using System;
-using System.Data.SqlClient;
+Projeto API Financeira - ASP.NET Core + React + TypeScript
+1. Backend - ASP.NET Core (C#)
+Program.cs
 
-class Program
+using FinanceiroApi.Data;
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDbContext<FinanceiroContext>(opt =>
+    opt.UseInMemoryDatabase("FinanceiroDb"));
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
 {
-    static void Main()
-    {
-        // Connection string de exemplo — ajuste para seu servidor, banco, usuário e senha
-        string connectionString = "Server=localhost;Database=NomeDoSeuBanco;User Id=seuUsuario;Password=suaSenha;";
-        
-        // Cria a conexão
-        using (SqlConnection connection = new SqlConnection(connectionString))
-        {
-            try
-            {
-                connection.Open(); // Tenta abrir a conexão
-                Console.WriteLine("Conexão bem-sucedida!");
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-                // Aqui você pode executar comandos, fazer consultas, etc.
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Erro ao conectar: " + ex.Message);
-            }
-        } // A conexão é automaticamente fechada aqui (por causa do using)
+app.UseHttpsRedirection();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+
+FinanceiroContext.cs
+
+using Microsoft.EntityFrameworkCore;
+using FinanceiroApi.Models;
+
+namespace FinanceiroApi.Data
+{
+    public class FinanceiroContext : DbContext
+    {
+        public FinanceiroContext(DbContextOptions<FinanceiroContext> options) : base(options) { }
+        public DbSet<Pagamento> Pagamentos { get; set; }
     }
 }
 
+Pagamento.cs
 
-PayController
+namespace FinanceiroApi.Models
+{
+    public class Pagamento
+    {
+        public int Id { get; set; }
+        public string Descricao { get; set; }
+        public decimal Valor { get; set; }
+        public DateTime Data { get; set; }
+    }
+}
+
+PagamentosController.cs
 
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using WebApiFinancer.Data;
-using WebApiFinancer.Models;
+using FinanceiroApi.Data;
+using FinanceiroApi.Models;
 
-namespace WebApiFinancer.Controllers
+namespace FinanceiroApi.Controllers
 {
-
-
     [ApiController]
     [Route("api/[controller]")]
     public class PagamentosController : ControllerBase
     {
-        private readonly AppDbContext _context;
-        public PagamentosController(AppDbContext context)
+        private readonly FinanceiroContext _context;
+
+        public PagamentosController(FinanceiroContext context)
         {
             _context = context;
         }
 
         [HttpGet]
-        
-        public async Task<ActionResult<IEnumerable<Pagamento>>> GetPagamentos()
+        public async Task<ActionResult<IEnumerable<Pagamento>>> GetTodos()
         {
-            var pagamentos = await _context.Pagamentos.ToListAsync();
-            return Ok(pagamentos);
+            return await _context.Pagamentos.ToListAsync();
         }
+
         [HttpGet("{id}")]
-        public async Task<ActionResult<Pagamento>> GetPayId(int id)
+        public async Task<ActionResult<Pagamento>> GetPorId(int id)
         {
             var pagamento = await _context.Pagamentos.FindAsync(id);
-            if (pagamento == null)
-            {
-                return NotFound();
-            }
-            return Ok(pagamento);
+            return pagamento is null ? NotFound() : Ok(pagamento);
         }
-        [HttpPost]
-        public ActionResult<Pagamento> PostPagamento(Pagamento pagamento)
-        {
-            _context.Pagamentos.Add(pagamento);
-            _context.SaveChanges();
-            return CreatedAtAction(nameof(GetPayId), new { id = pagamento.Id }, pagamento);
-        }
+
         [HttpGet("saldo")]
         public async Task<ActionResult<decimal>> GetSaldo()
         {
-            var totalPagamentos = await _context.Pagamentos.SumAsync(p => p.Valor);
-            return Ok(-totalPagamentos);
-
+            var total = await _context.Pagamentos.SumAsync(p => p.Valor);
+            return Ok(-total);
         }
+
+        [HttpPost]
+        public async Task<ActionResult<Pagamento>> Criar(Pagamento pagamento)
+        {
+            _context.Pagamentos.Add(pagamento);
+            await _context.SaveChangesAsync();
+            return CreatedAtAction(nameof(GetPorId), new { id = pagamento.Id }, pagamento);
+        }
+
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPagamento(int id, Pagamento pagamento)
+        public async Task<IActionResult> Atualizar(int id, Pagamento pagamento)
         {
-            if (id != pagamento.Id)
-            {
-                return BadRequest();
-            }
-
-                _context.Entry(pagamento).State = EntityState.Modified;
-                await _context.SaveChangesAsync();
-                return NoContent();
-           
+            if (id != pagamento.Id) return BadRequest();
+            _context.Entry(pagamento).State = EntityState.Modified;
+            await _context.SaveChangesAsync();
+            return NoContent();
         }
 
-    }
-    }
-
-
-
-MiddlewareExcption
-
-namespace WebApiFinancer.Middlewares
-{
-    public class ExceptionMiddleware
-    {
-        private readonly RequestDelegate _next;
-
-        public ExceptionMiddleware(RequestDelegate next)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Excluir(int id)
         {
-            _next = next;
-
-
-        }
-
-        public async Task InvokeAsync(HttpContext context)
-        {
-            try
-            {
-                await _next(context);
-
-            }
-            catch (Exception)
-            {
-                context.Response.StatusCode = 500;
-                context.Response.ContentType = "application/json";
-
-                await context.Response.WriteAsync("{\"message\":\"Erro interno. Tente novamente mais tarde.\"}");
-            }
+            var pagamento = await _context.Pagamentos.FindAsync(id);
+            if (pagamento == null) return NotFound();
+            _context.Pagamentos.Remove(pagamento);
+            await _context.SaveChangesAsync();
+            return NoContent();
         }
     }
 }
 
+2. Frontend - React + TypeScript
+App.tsx
 
-
-modelPagamento
-
-namespace WebApiFinancer.Models
-{
-    public class Pagamento
-    {
-        public int Id { get; set; }
-        public string Nome { get; set; }
-        public string Descricao { get; set; }
-        public decimal Valor { get; set; }
-        public DateTime Data { get; set; }
-        public bool Pago { get; set; }
-
-    }
-}
-
-
-
-// App.tsx
 import React from 'react';
 import Pagamentos from './components/Pagamentos';
 
@@ -182,7 +155,8 @@ export default function App() {
   );
 }
 
-// src/types/Pagamento.ts
+types/Pagamento.ts
+
 export interface Pagamento {
   id: number;
   descricao: string;
@@ -190,7 +164,8 @@ export interface Pagamento {
   data: string;
 }
 
-// src/components/Pagamentos.tsx
+components/Pagamentos.tsx
+
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Pagamento } from '../types/Pagamento';
@@ -236,7 +211,8 @@ export default function Pagamentos() {
   );
 }
 
-// src/components/NovoPagamentoForm.tsx
+components/NovoPagamentoForm.tsx
+
 import React, { useState } from 'react';
 import axios from 'axios';
 import { Pagamento } from '../types/Pagamento';
@@ -302,6 +278,7 @@ export default function NovoPagamentoForm({ onAdd }: Props) {
     </form>
   );
 }
+
 
 
  No arquivo src/index.css, adicione:
